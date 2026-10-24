@@ -18,6 +18,7 @@ type FileTab struct {
 	List    *widget.List
 	Page    *fyne.Container
 	LoadDir func(string)
+	TabButton *widget.Button
 }
 
 func main() {
@@ -50,7 +51,16 @@ func main() {
 			Entries: entries,
 		}
 
-		pathLabel := widget.NewLabel(path)
+		pathEntry := widget.NewEntry()
+		pathEntry.SetText(path)
+
+		pathEntry.OnSubmitted = func (path string)  {
+			info,err := os.Stat(path)
+			if err == nil && info.IsDir(){
+				tab.History = append(tab.History, tab.Path)
+				tab.LoadDir(path)
+			}
+		}
 
 		tab.List = widget.NewList(
 			func() int {
@@ -78,7 +88,7 @@ func main() {
 			}
 			tab.Path = newPath
 			tab.Entries = items
-			pathLabel.SetText(newPath)
+			pathEntry.SetText(newPath)
 			tab.List.UnselectAll()
 			tab.List.Refresh()
 		}
@@ -126,18 +136,18 @@ func main() {
 			nil, nil,
 			container.NewHBox(backButton,rootButton, refreshButton),
 			nil,
-			pathLabel,
+			pathEntry,
 		)
-
+		
 		tab.Page = container.NewBorder(toolbar, nil, nil, nil, tab.List)
-
+		
 		index := len(tabs)
 		tabs = append(tabs, tab)
 
-		tabButton := widget.NewButton(filepath.Base(path), func() {
+		tab.TabButton = widget.NewButton(filepath.Base(path), func() {
 			switchTab(index)
 		})
-		tabBar.Add(tabButton)
+		tabBar.Add(tab.TabButton)
 
 		switchTab(index)
 	}
