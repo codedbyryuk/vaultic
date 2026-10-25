@@ -1,7 +1,8 @@
-
 package main
 
 import (
+	
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -9,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
+	// "fyne.io/fyne/v2/layout"
 )
 
 type FileTab struct {
@@ -19,6 +21,20 @@ type FileTab struct {
 	Page    *fyne.Container
 	LoadDir func(string)
 	TabButton *widget.Button
+}
+
+func formatSize(size int64) string{
+	if size >= 1024*1024*1024{
+		return fmt.Sprintf("%.1f GB",float64(size)/(1024*1024*1024))
+	}
+	if size >= 1024*1024{
+		return fmt.Sprintf("%.1f MB", float64(size)/(1024*1024))
+	}
+	if size >= 1024{
+		return fmt.Sprintf("%.1f KB",float64(size)/1024)
+	}else{
+		return fmt.Sprintf("%d B",size)
+	}
 }
 
 func main() {
@@ -71,11 +87,16 @@ func main() {
 			},
 			func(id widget.ListItemID, item fyne.CanvasObject) {
 				entry := tab.Entries[id]
+				info,err := entry.Info()
+				size := formatSize(info.Size())
+				if err != nil{
+					return
+				}
 				name := entry.Name()
 				if entry.IsDir() {
 					name = "📁  " + name
 				} else {
-					name = "   " + name
+					name = "   " + name + " (" + size + ")"
 				}
 				item.(*widget.Label).SetText(name)
 			},
@@ -87,6 +108,7 @@ func main() {
 				return
 			}
 			tab.Path = newPath
+			tab.TabButton.SetText(filepath.Base(newPath))
 			tab.Entries = items
 			pathEntry.SetText(newPath)
 			tab.List.UnselectAll()
@@ -158,6 +180,16 @@ func main() {
 		}
 
 		activeTab = index
+
+		for i:=0; i < len(tabs);i++{
+			folderName := filepath.Base(tabs[i].Path)
+			if  i==activeTab{
+				folderName = "● " + folderName
+			}
+
+			tabs[i].TabButton.SetText(folderName)
+		}
+
 		content.Objects = []fyne.CanvasObject{tabs[activeTab].Page}
 		content.Refresh()
 	}
@@ -174,6 +206,8 @@ func main() {
 	)
 
 	sidebar := container.NewVBox(
+		widget.NewLabel("Places"),
+		widget.NewSeparator(),
 		widget.NewButton("Home",func() {
 			tab := tabs[activeTab]
 			tab.History  =append(tab.History, tab.Path)
@@ -195,10 +229,10 @@ func main() {
 			tab.LoadDir(filepath.Join(home,"Documents"))
 		}),
 	)
+	split := container.NewHSplit(sidebar,mainContent)
+	split.SetOffset(0.2)
 
-	window.SetContent(container.NewBorder(
-		nil,nil,sidebar,nil,mainContent,
-	))
+	window.SetContent(split)
 
 	addTab(home)
 	window.ShowAndRun()
