@@ -47,8 +47,7 @@ func (t *TabChip) CreateRenderer() fyne.WidgetRenderer {
 
 func (t *TabChip) SetText(text string) {
 	if r := []rune(text); len(r) > 18 {
-		text = string(r[:17]) + "…"
-	}
+		text = string(r[:17]) + "…"}
 	t.label.SetText(text)
 }
 

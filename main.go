@@ -151,7 +151,7 @@ func tabTitle(p string) string {
 func main() {
 	myApp := app.New()
 	myApp.Settings().SetTheme(newVaulticTheme())
-	window := myApp.NewWindow("Vaultic")
+	window := myApp.NewWindow("Vaultic - File Manager")
 	window.Resize(fyne.NewSize(1000, 650))
 
 	home, err := os.UserHomeDir()
