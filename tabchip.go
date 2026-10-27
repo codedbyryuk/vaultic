@@ -15,23 +15,32 @@ import (
 type TabChip struct {
 	widget.BaseWidget
 	label     *widget.Label
+	closeBtn *widget.Button
 	bg        *canvas.Rectangle
 	underline *canvas.Rectangle
 	active    bool
 	OnTapped  func()
+	OnClose func()
 }
 
-func NewTabChip(text string, tapped func()) *TabChip {
+func NewTabChip(text string, onTap,onClose func()) *TabChip {
 	t := &TabChip{
 		label:     widget.NewLabel(""),
 		bg:        canvas.NewRectangle(color.Transparent),
 		underline: canvas.NewRectangle(color.Transparent),
-		OnTapped:  tapped,
+		OnTapped:  onTap,
+		OnClose: onClose,
 	}
+	t.closeBtn = widget.NewButtonWithIcon("",theme.ContentClearIcon(),func() {
+		if t.OnClose != nil{
+			t.OnClose()
+		}
+	})
+	t.closeBtn.Importance = widget.LowImportance
 	t.bg.CornerRadius = 8
 	t.underline.CornerRadius = 1
 	t.underline.SetMinSize(fyne.NewSize(0, 2))
-	t.label.Alignment = fyne.TextAlignCenter
+	t.label.Alignment = fyne.TextAlignLeading
 
 	t.SetText(text)
 	t.SetActive(false)
@@ -41,7 +50,7 @@ func NewTabChip(text string, tapped func()) *TabChip {
 
 func (t *TabChip) CreateRenderer() fyne.WidgetRenderer {
 	inset := container.New(layout.NewCustomPaddedLayout(-12, 2, 12, 12), t.underline)
-	body := container.NewBorder(nil, inset, nil, nil, container.NewPadded(t.label))
+	body := container.NewBorder(nil, inset, nil, t.closeBtn, container.NewPadded(t.label))
 	return widget.NewSimpleRenderer(container.NewStack(t.bg, body))
 }
 
@@ -89,4 +98,13 @@ func (t *TabChip) MouseOut() {
 
 func (t *TabChip) Cursor() desktop.Cursor {
 	return desktop.PointerCursor
+}
+
+func (t *TabChip) SetClosable(c bool){
+	if c{
+		t.closeBtn.Show()
+	}else{
+		t.closeBtn.Hide()
+	}
+	t.Refresh()
 }

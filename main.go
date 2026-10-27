@@ -2,6 +2,15 @@ package main
 
 import (
 	"fmt"
+	"image/color"
+	// "math"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"sort"
+	"strings"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
@@ -9,12 +18,6 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"image/color"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"sort"
-	"strings"
 )
 
 type FileTab struct {
@@ -25,6 +28,7 @@ type FileTab struct {
 	Page      *fyne.Container
 	LoadDir   func(string)
 	TabButton *TabChip
+	All []os.DirEntry
 }
 
 type FileRow struct {
@@ -167,6 +171,17 @@ func main() {
 
 	var addTab func(string)
 	var switchTab func(int)
+	var closeTab func(*FileTab)
+
+	indexOf := func(t *FileTab) int {
+		for i,x := range tabs{
+			if  x==t{
+				return i
+			}
+		}
+		return -1
+	}
+
 
 	addTab = func(path string) {
 		entries, err := os.ReadDir(path)
@@ -225,6 +240,61 @@ func main() {
 				}, window)
 		}
 
+		searchEntry := widget.NewEntry()
+		searchEntry.SetPlaceHolder("Search this folder")
+
+		clearBtn := widget.NewButtonWithIcon("",theme.ContentClearIcon(),func ()  {
+			searchEntry.SetText("")
+		})
+		clearBtn.Importance = widget.LowImportance
+		clearBtn.Hide()
+		searchEntry.ActionItem = clearBtn
+
+		emptyLabel := widget.NewLabel("")
+		emptyLabel.Importance = widget.LowImportance
+		emptyLabel.Alignment  = fyne.TextAlignCenter
+		emptyLabel.Hide()
+
+		applyFilter := func ()  {
+			q := strings.ToLower(strings.TrimSpace(searchEntry.Text))
+
+			if q ==""{
+				tab.Entries = tab.All
+			}else{
+				matches := make([]os.DirEntry,0,len(tab.All))
+				for _,e := range tab.All{
+					if strings.Contains(strings.ToLower(e.Name()),q){
+						matches = append(matches, e)
+					}
+				}
+				tab.Entries = matches
+			}
+
+			switch{
+			case len(tab.Entries) > 0:
+				emptyLabel.Hide()
+			case q != "":
+				emptyLabel.SetText("No matches for “" + strings.TrimSpace(searchEntry.Text) + "”")
+				emptyLabel.Show()
+			default:
+				emptyLabel.SetText("This folder is empty")
+				emptyLabel.Show()
+			}
+
+			tab.List.UnselectAll()
+			tab.List.Refresh()
+
+		}
+
+		searchEntry.OnChanged = func(s string){
+			if s== ""{
+				clearBtn.Hide()
+			}else{
+				clearBtn.Show()
+			}
+			applyFilter()
+		}
+
 		tab.List = widget.NewList(
 			func() int {
 				return len(tab.Entries)
@@ -247,27 +317,29 @@ func main() {
 				return
 			}
 
-			tab.Path = newPath
-			tab.Entries = items
-
 			sort.Slice(items, func(i, j int) bool {
 				a := items[i]
 				b := items[j]
 
-				if a.IsDir() && !b.IsDir() {
-					return true
+				if a.IsDir() != b.IsDir() {
+					return a.IsDir()
 				}
-				if !a.IsDir() && b.IsDir() {
-					return false
-				}
+				
 
 				return strings.ToLower(a.Name()) < strings.ToLower(b.Name())
 			})
+			navigated := newPath != tab.Path
+			tab.Path = newPath
+			tab.All = items
+
+			
 
 			tab.TabButton.SetText(tabTitle(newPath))
 			pathEntry.SetText(newPath)
-			tab.List.UnselectAll()
-			tab.List.Refresh()
+			if navigated{
+				searchEntry.SetText("")
+			}
+			applyFilter()
 		}
 
 		tab.List.OnSelected = func(id widget.ListItemID) {
@@ -313,7 +385,7 @@ func main() {
 		toolbar := container.NewBorder(
 			nil, nil,
 			container.NewHBox(backButton, rootButton, refreshButton),
-			nil,
+			container.NewStack(spacer(220,0),searchEntry),
 			pathEntry,
 		)
 
@@ -332,17 +404,42 @@ func main() {
 		tab.Page = container.NewBorder(
 			container.NewVBox(toolbar, headerRow, widget.NewSeparator()),
 			nil, nil, nil,
-			tab.List,
+			container.NewStack(tab.List,container.NewCenter(emptyLabel)),
 		)
-		index := len(tabs)
+		
 		tabs = append(tabs, tab)
 
-		tab.TabButton = NewTabChip(tabTitle(path), func() {
-			switchTab(index)
-		})
+		tab.TabButton = NewTabChip(tabTitle(path),
+		 func() {switchTab(indexOf(tab))},
+		 func() {closeTab(tab)},
+		
+		)
 		tabBar.Add(tab.TabButton)
 		tab.LoadDir(path)
-		switchTab(index)
+		switchTab(len(tabs)-1)
+	}
+
+	closeTab = func(tab *FileTab){
+		if len(tabs) <= 1{
+			return
+		}
+		i := indexOf(tab)
+		if i < 0{
+			return
+		}
+
+		tabs = slices.Delete(tabs,i,i+1)
+		tabBar.Remove(tab.TabButton)
+
+		switch{
+		case i < activeTab:
+			activeTab--
+		case i==activeTab:
+			activeTab = min(i,len(tabs)-1)
+		
+		}
+		switchTab(activeTab)
+
 	}
 
 	switchTab = func(index int) {
@@ -354,6 +451,7 @@ func main() {
 
 		for i, t:= range tabs{
 			t.TabButton.SetActive(i==activeTab)
+			t.TabButton.SetClosable(len(tabs) > 1)
 		}
 
 		content.Objects = []fyne.CanvasObject{tabs[activeTab].Page}
@@ -389,6 +487,4 @@ func main() {
 	addTab(home)
 	window.ShowAndRun()
 
-	addTab(home)
-	window.ShowAndRun()
 }
