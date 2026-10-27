@@ -71,8 +71,8 @@ type FileTab struct {
 	Entries    []Item
 	All        []Item
 	List       *widget.List
-	Grid       *widget.GridWrap // new
-	GridMode   bool             // new
+	Grid       *widget.GridWrap
+	GridMode   bool             
 	Page       *fyne.Container
 	LoadDir    func(string)
 	TabButton  *TabChip
