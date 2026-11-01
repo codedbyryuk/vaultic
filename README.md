@@ -7,14 +7,14 @@ Vaultic is a desktop file manager that is written in  Go and Fyne to feature eas
 
 ## Features
 
-**Folder navigation** — Browse directories and navigate between folders.
-**Tabbed browsing** — Work with multiple directories in separate tabs.
-**Sidebar shortcuts** — Quickly access common locations like Home, Desktop, Downloads, and Documents.
-**File information** — View file names and sizes.
-**Sorting** — Keep folders grouped before files and sort items alphabetically.
-**File opening** — Open files using their default Windows applications.
-**Context menu** — Access useful actions directly from files and folders.
-- **Path navigation** — Navigate to directories by entering their paths.
+-**Folder navigation** — Browse directories and navigate between folders.
+-**Tabbed browsing** — Work with multiple directories in separate tabs.
+-**Sidebar shortcuts** — Quickly access common locations like Home, Desktop, Downloads, and Documents.
+-**File information** — View file names and sizes.
+-**Sorting** — Keep folders grouped before files and sort items alphabetically.
+-**File opening** — Open files using their default Windows applications.
+-**Context menu** — Access useful actions directly from files and folders.
+-**Path navigation** — Navigate to directories by entering their paths.
 
 **Tech Stack**
  - [Go](https://go.dev/)
