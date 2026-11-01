@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"image/color"
-	// "math"
 	"context"
 	"errors"
 	"fyne.io/fyne/v2"
@@ -18,7 +17,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -72,12 +70,11 @@ type FileTab struct {
 	All        []Item
 	List       *widget.List
 	Grid       *widget.GridWrap
-	GridMode   bool             
+	GridMode   bool
 	Page       *fyne.Container
 	LoadDir    func(string)
 	TabButton  *TabChip
 }
-
 
 func (t *FileTab) Refresh() {
 	t.List.Refresh()
@@ -97,14 +94,12 @@ type FileRow struct {
 	loc  *widget.Label
 	size *widget.Label
 }
-
 func NewFileRow() *FileRow {
-	r := &FileRow{
-		icon: widget.NewIcon(theme.FileIcon()),
-		name: widget.NewLabel(""),
-		loc:  widget.NewLabel(""),
-		size: widget.NewLabel(""),
-	}
+	r := &FileRow{}
+	r.icon = widget.NewIcon(theme.FileIcon())
+	r.name = widget.NewLabel("")
+	r.loc = widget.NewLabel("")
+	r.size = widget.NewLabel("")
 	r.name.Truncation = fyne.TextTruncateEllipsis
 	r.size.Importance = widget.LowImportance
 	r.size.Alignment = fyne.TextAlignTrailing
@@ -114,18 +109,20 @@ func NewFileRow() *FileRow {
 	return r
 }
 
+
+
 func (r *FileRow) CreateRenderer() fyne.WidgetRenderer {
-	return widget.NewSimpleRenderer(
-		container.NewBorder(nil, nil, r.icon, container.NewHBox(r.loc, r.size), r.name),
-	)
+	right := container.NewHBox(r.loc, r.size)
+	layout := container.NewBorder(nil, nil, r.icon, right, r.name)
+	return widget.NewSimpleRenderer(layout)
 }
 
 func shorten(s string, limit int) string {
-	r := []rune(s)
-	if len(r) <= limit {
+	letters := []rune(s)
+	if len(letters) <= limit {
 		return s
 	}
-	return "…" + string(r[len(r)-limit+1:])
+	return "…" + string(letters[len(letters)-limit+1:])
 }
 
 func (r *FileRow) SetItem(item Item, base string) {
@@ -134,14 +131,16 @@ func (r *FileRow) SetItem(item Item, base string) {
 
 	r.loc.SetText("")
 	if item.Dir != base {
-		if rel, err := filepath.Rel(base, item.Dir); err == nil {
+		rel, err := filepath.Rel(base, item.Dir)
+		if err == nil {
 			r.loc.SetText(shorten(rel, 36))
 		}
 	}
 
 	r.size.SetText("")
 	if !item.Entry.IsDir() {
-		if info, err := item.Entry.Info(); err == nil {
+		info, err := item.Entry.Info()
+		if err == nil {
 			r.size.SetText(formatSize(info.Size()))
 		}
 	}
@@ -155,10 +154,9 @@ type FileCell struct {
 }
 
 func NewFileCell() *FileCell {
-	c := &FileCell{
-		icon: widget.NewIcon(theme.FileIcon()),
-		name: widget.NewLabel(""),
-	}
+	c := &FileCell{}
+	c.icon = widget.NewIcon(theme.FileIcon())
+	c.name = widget.NewLabel("")
 	c.name.Alignment = fyne.TextAlignCenter
 	c.name.Truncation = fyne.TextTruncateEllipsis
 	c.ExtendBaseWidget(c)
@@ -166,10 +164,9 @@ func NewFileCell() *FileCell {
 }
 
 func (c *FileCell) CreateRenderer() fyne.WidgetRenderer {
-	return widget.NewSimpleRenderer(container.NewVBox(
-		container.NewStack(spacer(112, 60), container.NewPadded(c.icon)), 
-		c.name,
-	))
+	iconBox := container.NewStack(spacer(112,60),container.NewPadded(c.icon))
+	return widget.NewSimpleRenderer(container.NewVBox(iconBox,c.name))
+	
 }
 
 func (c *FileCell) SetItem(item Item) {
@@ -183,10 +180,10 @@ type fileClip struct {
 }
 
 func validName(name string) error {
-	switch {
-	case name == "":
+	if name == "" {
 		return errors.New("name can't be empty")
-	case strings.ContainsAny(name, `/\:*?"<>|`):
+	}
+	if strings.ContainsAny(name, `/\:*?"<>|`) {
 		return errors.New(`name can't contain / \ : * ? " < > |`)
 	}
 	return nil
@@ -194,22 +191,49 @@ func validName(name string) error {
 
 
 func uniquePath(dir, name string) string {
-	p := filepath.Join(dir, name)
-	if _, err := os.Stat(p); os.IsNotExist(err) {
-		return p
+	path := filepath.Join(dir, name)
+	_, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return path
 	}
+ 
 	ext := filepath.Ext(name)
 	base := strings.TrimSuffix(name, ext)
-	for i := 1; ; i++ {
-		suffix := " - Copy"
-		if i > 1 {
-			suffix = fmt.Sprintf(" - Copy (%d)", i)
+	n := 1
+	for {
+		var newName string
+		if n == 1 {
+			newName = base + " - Copy" + ext
+		} else {
+			newName = fmt.Sprintf("%s - Copy (%d)%s", base, n, ext)
 		}
-		p = filepath.Join(dir, base+suffix+ext)
-		if _, err := os.Stat(p); os.IsNotExist(err) {
-			return p
+		path = filepath.Join(dir, newName)
+		_, err = os.Stat(path)
+		if os.IsNotExist(err) {
+			return path
 		}
+		n++
 	}
+}
+
+func copyFile(src, dst string, mode os.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+ 
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+ 
+	_, err = io.Copy(out, in)
+	closeErr := out.Close()
+	if err != nil {
+		return err
+	}
+	return closeErr
 }
 
 func copyPath(src, dst string) error {
@@ -217,51 +241,43 @@ func copyPath(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	if info.IsDir() {
-		if err := os.MkdirAll(dst, 0o755); err != nil {
-			return err
-		}
-		entries, err := os.ReadDir(src)
+ 
+	if !info.IsDir() {
+		return copyFile(src, dst, info.Mode().Perm())
+	}
+ 
+	err = os.MkdirAll(dst, 0o755)
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		from := filepath.Join(src, e.Name())
+		to := filepath.Join(dst, e.Name())
+		err = copyPath(from, to)
 		if err != nil {
 			return err
 		}
-		for _, e := range entries {
-			if err := copyPath(filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())); err != nil {
-				return err
-			}
-		}
-		return nil
 	}
-
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
-	if err != nil {
-		return err
-	}
-	_, err = io.Copy(out, in)
-	if cerr := out.Close(); err == nil {
-		err = cerr 
-	}
-	return err
+	return nil
 }
-
 func formatSize(size int64) string {
-	if size >= 1024*1024*1024 {
-		return fmt.Sprintf("%.1f GB", float64(size)/(1024*1024*1024))
+	kb := float64(1024)
+	mb := kb * 1024
+	gb := mb * 1024
+	s := float64(size)
+ 
+	if s >= gb {
+		return fmt.Sprintf("%.1f GB", s/gb)
+	} else if s >= mb {
+		return fmt.Sprintf("%.1f MB", s/mb)
+	} else if s >= kb {
+		return fmt.Sprintf("%.1f KB", s/kb)
 	}
-	if size >= 1024*1024 {
-		return fmt.Sprintf("%.1f MB", float64(size)/(1024*1024))
-	}
-	if size >= 1024 {
-		return fmt.Sprintf("%.1f KB", float64(size)/1024)
-	} else {
-		return fmt.Sprintf("%d B", size)
-	}
+	return fmt.Sprintf("%d B", size)
 }
 
 func flatButton(icon fyne.Resource, label string, tapped func()) *widget.Button {
@@ -277,25 +293,26 @@ func panel(content fyne.CanvasObject, fill color.Color, radius float32) fyne.Can
 	return container.NewStack(bg, container.NewPadded(content))
 }
 
-func sectionLabel(text string) fyne.CanvasObject {
-	l := widget.NewLabel(strings.ToUpper(text))
-	l.Importance = widget.LowImportance
-	l.TextStyle = fyne.TextStyle{Bold: true}
-	return l
-}
+
 
 func spacer(w, h float32) fyne.CanvasObject {
-	r := canvas.NewRectangle(color.Transparent)
-	r.SetMinSize(fyne.NewSize(w, h))
-	return r
+	rect := canvas.NewRectangle(color.Transparent)
+	rect.SetMinSize(fyne.NewSize(w, h))
+	return rect
 }
 
-func tabTitle(p string) string {
-	b := filepath.Base(p)
-	if b == "." || b == string(filepath.Separator) {
-		return p
+func sectionLabel(text string) fyne.CanvasObject {
+	label := widget.NewLabel(strings.ToUpper(text))
+	label.Importance = widget.LowImportance
+	label.TextStyle = fyne.TextStyle{Bold: true}
+	return label
+}
+func tabTitle(path string) string {
+	base := filepath.Base(path)
+	if base == "." || base == string(filepath.Separator) {
+		return path
 	}
-	return b
+	return base
 }
 
 func main() {
@@ -303,163 +320,171 @@ func main() {
 	myApp.Settings().SetTheme(newVaulticTheme())
 	window := myApp.NewWindow("Vaultic - File Manager")
 	window.Resize(fyne.NewSize(1000, 650))
-
+ 
 	home, err := os.UserHomeDir()
 	if err != nil {
 		panic(err)
 	}
-
+ 
 	tabs := []*FileTab{}
 	activeTab := 0
-
+ 
 	tabBar := container.NewHBox()
 	content := container.NewMax()
-
+ 
 	var addTab func(string)
 	var switchTab func(int)
 	var closeTab func(*FileTab)
-	var clip fileClip 
-
+	var clip fileClip
+ 
 	indexOf := func(t *FileTab) int {
-		for i, x := range tabs {
-			if x == t {
+		for i := 0; i < len(tabs); i++ {
+			if tabs[i] == t {
 				return i
 			}
 		}
 		return -1
 	}
-
+ 
 	addTab = func(path string) {
-		if _, err := os.ReadDir(path); err != nil {
+		_, err := os.ReadDir(path)
+		if err != nil {
 			return
 		}
-
-		tab := &FileTab{
-			Path: path,
-		}
-
+ 
+		tab := &FileTab{Path: path}
+ 
 		pathEntry := widget.NewEntry()
 		pathEntry.SetText(path)
-
-		pathEntry.OnSubmitted = func(path string) {
-			info, err := os.Stat(path)
+ 
+		pathEntry.OnSubmitted = func(typed string) {
+			info, err := os.Stat(typed)
 			if err == nil && info.IsDir() {
 				tab.History = append(tab.History, tab.Path)
-				tab.LoadDir(path)
+				tab.LoadDir(typed)
 			}
 		}
-
-		renameEntry := func(item Item) {
+ 
+		renameItem := func(item Item) {
 			oldName := item.Entry.Name()
 			input := widget.NewEntry()
 			input.SetText(oldName)
-
-			dialog.ShowForm("Rename", "Rename", "Cancel",
-				[]*widget.FormItem{widget.NewFormItem("New name", input)},
-				func(ok bool) {
-					if !ok {
+ 
+			formItems := []*widget.FormItem{widget.NewFormItem("New name", input)}
+ 
+			dialog.ShowForm("Rename", "Rename", "Cancel", formItems, func(ok bool) {
+				if !ok {
+					return
+				}
+				newName := strings.TrimSpace(input.Text)
+				if newName == "" || newName == oldName {
+					return
+				}
+				err := validName(newName)
+				if err != nil {
+					dialog.ShowError(err, window)
+					return
+				}
+ 
+				oldPath := item.Path()
+				newPath := filepath.Join(item.Dir, newName)
+ 
+				if !strings.EqualFold(newName, oldName) {
+					_, err := os.Stat(newPath)
+					if err == nil {
+						dialog.ShowError(fmt.Errorf("%q already exists", newName), window)
 						return
 					}
-					newName := strings.TrimSpace(input.Text)
-					if newName == "" || newName == oldName {
-						return
-					}
-					if err := validName(newName); err != nil {
-						dialog.ShowError(err, window)
-						return
-					}
-					oldPath := item.Path()
-					newPath := filepath.Join(item.Dir, newName)
-
-					if !strings.EqualFold(newName, oldName) {
-						if _, err := os.Stat(newPath); err == nil {
-							dialog.ShowError(fmt.Errorf("%q already exists", newName), window)
-							return
-						}
-					}
-					if err := os.Rename(oldPath, newPath); err != nil {
-						dialog.ShowError(err, window)
-						return
-					}
-					tab.LoadDir(tab.Path)
-				}, window)
+				}
+ 
+				err = os.Rename(oldPath, newPath)
+				if err != nil {
+					dialog.ShowError(err, window)
+					return
+				}
+				tab.LoadDir(tab.Path)
+			}, window)
 		}
-
+ 
 		openItem := func(item Item) {
 			if item.Entry.IsDir() {
 				tab.History = append(tab.History, tab.Path)
 				tab.LoadDir(item.Path())
 				return
 			}
-			_ = exec.Command("cmd", "/c", "start", "", item.Path()).Start()
+			exec.Command("cmd", "/c", "start", "", item.Path()).Start()
 		}
-
-		selectIdx := func(id int) {
+ 
+		selectIndex := func(id int) {
 			if tab.GridMode {
 				tab.Grid.Select(id)
 			} else {
 				tab.List.Select(id)
 			}
 		}
-
+ 
 		deleteItem := func(item Item) {
-			dialog.ShowConfirm("Delete permanently?",
-				fmt.Sprintf("“%s” will be permanently deleted. This can't be undone.", item.Entry.Name()),
-				func(ok bool) {
-					if !ok {
-						return
-					}
-					if err := os.RemoveAll(item.Path()); err != nil {
-						dialog.ShowError(err, window)
-						return
-					}
-					tab.LoadDir(tab.Path)
-				}, window)
+			message := fmt.Sprintf("“%s” will be permanently deleted. This can't be undone.", item.Entry.Name())
+			dialog.ShowConfirm("Delete permanently?", message, func(ok bool) {
+				if !ok {
+					return
+				}
+				err := os.RemoveAll(item.Path())
+				if err != nil {
+					dialog.ShowError(err, window)
+					return
+				}
+				tab.LoadDir(tab.Path)
+			}, window)
 		}
-
+ 
 		newFolder := func() {
 			input := widget.NewEntry()
 			input.SetText("New folder")
-			dialog.ShowForm("New folder", "Create", "Cancel",
-				[]*widget.FormItem{widget.NewFormItem("Name", input)},
-				func(ok bool) {
-					if !ok {
-						return
-					}
-					name := strings.TrimSpace(input.Text)
-					if err := validName(name); err != nil {
-						dialog.ShowError(err, window)
-						return
-					}
-				
-					if err := os.Mkdir(filepath.Join(tab.Path, name), 0o755); err != nil {
-						dialog.ShowError(err, window)
-						return
-					}
-					tab.LoadDir(tab.Path)
-				}, window)
+ 
+			formItems := []*widget.FormItem{widget.NewFormItem("Name", input)}
+ 
+			dialog.ShowForm("New folder", "Create", "Cancel", formItems, func(ok bool) {
+				if !ok {
+					return
+				}
+				name := strings.TrimSpace(input.Text)
+				err := validName(name)
+				if err != nil {
+					dialog.ShowError(err, window)
+					return
+				}
+				err = os.Mkdir(filepath.Join(tab.Path, name), 0o755)
+				if err != nil {
+					dialog.ShowError(err, window)
+					return
+				}
+				tab.LoadDir(tab.Path)
+			}, window)
 		}
-
+ 
 		pasteHere := func() {
 			if len(clip.Paths) == 0 {
 				return
 			}
 			here := strings.ToLower(tab.Path) + string(filepath.Separator)
-
+ 
 			for _, src := range clip.Paths {
 				if clip.Cut && strings.EqualFold(filepath.Dir(src), tab.Path) {
-					continue 
+					continue
 				}
 				if strings.HasPrefix(here, strings.ToLower(src)+string(filepath.Separator)) {
 					dialog.ShowError(errors.New("can't paste a folder into itself"), window)
 					return
 				}
-
+ 
 				dst := uniquePath(tab.Path, filepath.Base(src))
 				var err error
 				if clip.Cut {
-					if err = os.Rename(src, dst); err != nil { 
-						if err = copyPath(src, dst); err == nil {
+					err = os.Rename(src, dst)
+					if err != nil {
+						err = copyPath(src, dst)
+						if err == nil {
 							err = os.RemoveAll(src)
 						}
 					}
@@ -471,76 +496,81 @@ func main() {
 					break
 				}
 			}
+ 
 			if clip.Cut {
 				clip = fileClip{}
 			}
 			tab.LoadDir(tab.Path)
 		}
-
+ 
 		showMenu := func(item Item, pos fyne.Position) {
-			paste := fyne.NewMenuItem("Paste here", pasteHere)
-			paste.Disabled = len(clip.Paths) == 0
-
-			items := []*fyne.MenuItem{
-				fyne.NewMenuItem("Open", func() { openItem(item) }),
+			pasteItem := fyne.NewMenuItem("Paste here", pasteHere)
+			if len(clip.Paths) == 0 {
+				pasteItem.Disabled = true
 			}
+ 
+			menuItems := []*fyne.MenuItem{}
+			menuItems = append(menuItems, fyne.NewMenuItem("Open", func() { openItem(item) }))
 			if item.Entry.IsDir() {
-				items = append(items, fyne.NewMenuItem("Open in new tab", func() { addTab(item.Path()) }))
+				menuItems = append(menuItems, fyne.NewMenuItem("Open in new tab", func() { addTab(item.Path()) }))
 			}
-			items = append(items,
-				fyne.NewMenuItemSeparator(),
-				fyne.NewMenuItem("Copy", func() { clip = fileClip{Paths: []string{item.Path()}} }),
-				fyne.NewMenuItem("Cut", func() { clip = fileClip{Paths: []string{item.Path()}, Cut: true} }),
-				paste,
-				fyne.NewMenuItemSeparator(),
-				fyne.NewMenuItem("Rename", func() { renameEntry(item) }),
-				fyne.NewMenuItem("Delete", func() { deleteItem(item) }),
-				fyne.NewMenuItemSeparator(),
-				fyne.NewMenuItem("Copy path", func() { window.Clipboard().SetContent(item.Path()) }),
-			)
-			widget.NewPopUpMenu(fyne.NewMenu("", items...), window.Canvas()).ShowAtPosition(pos)
+			menuItems = append(menuItems, fyne.NewMenuItemSeparator())
+			menuItems = append(menuItems, fyne.NewMenuItem("Copy", func() {
+				clip = fileClip{Paths: []string{item.Path()}}
+			}))
+			menuItems = append(menuItems, fyne.NewMenuItem("Cut", func() {
+				clip = fileClip{Paths: []string{item.Path()}, Cut: true}
+			}))
+			menuItems = append(menuItems, pasteItem)
+			menuItems = append(menuItems, fyne.NewMenuItemSeparator())
+			menuItems = append(menuItems, fyne.NewMenuItem("Rename", func() { renameItem(item) }))
+			menuItems = append(menuItems, fyne.NewMenuItem("Delete", func() { deleteItem(item) }))
+			menuItems = append(menuItems, fyne.NewMenuItemSeparator())
+			menuItems = append(menuItems, fyne.NewMenuItem("Copy path", func() {
+				window.Clipboard().SetContent(item.Path())
+			}))
+ 
+			menu := fyne.NewMenu("", menuItems...)
+			widget.NewPopUpMenu(menu, window.Canvas()).ShowAtPosition(pos)
 		}
-
-		
+ 
 		bind := func(c *Clicks, id int, item Item) {
-			c.OnTapped = func() { selectIdx(id) }
+			c.OnTapped = func() { selectIndex(id) }
 			c.OnDouble = func() { openItem(item) }
 			c.OnMenu = func(pos fyne.Position) {
-				selectIdx(id)
+				selectIndex(id)
 				showMenu(item, pos)
 			}
 		}
-
+ 
 		searchEntry := widget.NewEntry()
 		searchEntry.SetPlaceHolder("Search this folder")
-
+ 
 		clearBtn := widget.NewButtonWithIcon("", theme.ContentClearIcon(), func() {
 			searchEntry.SetText("")
 		})
 		clearBtn.Importance = widget.LowImportance
 		clearBtn.Hide()
 		searchEntry.ActionItem = clearBtn
-
+ 
 		emptyLabel := widget.NewLabel("")
 		emptyLabel.Importance = widget.LowImportance
 		emptyLabel.Alignment = fyne.TextAlignCenter
 		emptyLabel.Hide()
-
+ 
 		nameHeader := widget.NewLabel("Name")
 		nameHeader.Importance = widget.LowImportance
-
+ 
 		var cancelSearch context.CancelFunc
-
+ 
 		applyFilter := func() {
-			
 			if cancelSearch != nil {
 				cancelSearch()
 				cancelSearch = nil
 			}
-
+ 
 			query := strings.ToLower(strings.TrimSpace(searchEntry.Text))
-
-		
+ 
 			if query == "" {
 				tab.Entries = tab.All
 				nameHeader.SetText("Name")
@@ -554,61 +584,58 @@ func main() {
 				tab.Refresh()
 				return
 			}
-
-		
+ 
 			ctx, cancel := context.WithCancel(context.Background())
 			cancelSearch = cancel
 			root := tab.Path
-
+ 
 			tab.Entries = nil
 			nameHeader.SetText("Searching…")
 			emptyLabel.Hide()
 			tab.List.UnselectAll()
 			tab.List.Refresh()
-
+ 
 			go func() {
-				
 				select {
 				case <-time.After(200 * time.Millisecond):
 				case <-ctx.Done():
 					return
 				}
-
-				var batch []Item
+ 
+				batch := []Item{}
 				total := 0
 				lastFlush := time.Now()
-
+ 
 				flush := func(done bool) {
 					found := batch
 					batch = nil
-					total += len(found)
+					total = total + len(found)
 					count := total
-
-					fyne.Do(func() { 
+ 
+					fyne.Do(func() {
 						if ctx.Err() != nil {
-							return 
+							return
 						}
 						tab.Entries = append(tab.Entries, found...)
-
-						switch {
-						case !done:
+ 
+						if !done {
 							nameHeader.SetText(fmt.Sprintf("Searching… %d found", count))
-						case count == 0:
+						} else if count == 0 {
 							nameHeader.SetText("Name")
 							emptyLabel.SetText("No matches for “" + strings.TrimSpace(searchEntry.Text) + "”")
 							emptyLabel.Show()
-						default:
+						} else {
 							nameHeader.SetText(fmt.Sprintf("Name · %d results", count))
 						}
 						tab.List.Refresh()
 					})
 				}
-
-				_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+ 
+				filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 					if ctx.Err() != nil {
-						return ctx.Err() 
+						return ctx.Err()
 					}
-					if err != nil { 
+					if err != nil {
 						if d != nil && d.IsDir() {
 							return fs.SkipDir
 						}
@@ -617,7 +644,7 @@ func main() {
 					if p == root {
 						return nil
 					}
-
+ 
 					if strings.Contains(strings.ToLower(d.Name()), query) {
 						batch = append(batch, Item{Entry: d, Dir: filepath.Dir(p)})
 					}
@@ -627,19 +654,19 @@ func main() {
 					}
 					return nil
 				})
-
+ 
 				if ctx.Err() == nil {
 					flush(true)
 				}
 			}()
 		}
-
+ 
 		tab.StopSearch = func() {
 			if cancelSearch != nil {
 				cancelSearch()
 			}
 		}
-
+ 
 		searchEntry.OnChanged = func(s string) {
 			if s == "" {
 				clearBtn.Hide()
@@ -648,7 +675,7 @@ func main() {
 			}
 			applyFilter()
 		}
-
+ 
 		tab.List = widget.NewList(
 			func() int { return len(tab.Entries) },
 			func() fyne.CanvasObject { return NewFileRow() },
@@ -659,7 +686,7 @@ func main() {
 				bind(&row.Clicks, id, item)
 			},
 		)
-
+ 
 		tab.Grid = widget.NewGridWrap(
 			func() int { return len(tab.Entries) },
 			func() fyne.CanvasObject { return NewFileCell() },
@@ -670,33 +697,30 @@ func main() {
 				bind(&cell.Clicks, id, item)
 			},
 		)
-		tab.Grid.Hide() 
-
+		tab.Grid.Hide()
+ 
 		tab.LoadDir = func(newPath string) {
 			items, err := os.ReadDir(newPath)
 			if err != nil {
 				return
 			}
-
+ 
 			sort.Slice(items, func(i, j int) bool {
-				a := items[i]
-				b := items[j]
-
-				if a.IsDir() != b.IsDir() {
-					return a.IsDir()
+				if items[i].IsDir() != items[j].IsDir() {
+					return items[i].IsDir()
 				}
-
-				return strings.ToLower(a.Name()) < strings.ToLower(b.Name())
+				return strings.ToLower(items[i].Name()) < strings.ToLower(items[j].Name())
 			})
-			all := make([]Item, len(items))
-			for i, e := range items {
-				all[i] = Item{Entry: e, Dir: newPath}
+ 
+			all := []Item{}
+			for _, e := range items {
+				all = append(all, Item{Entry: e, Dir: newPath})
 			}
-
+ 
 			navigated := newPath != tab.Path
 			tab.Path = newPath
 			tab.All = all
-
+ 
 			tab.TabButton.SetText(tabTitle(newPath))
 			pathEntry.SetText(newPath)
 			if navigated {
@@ -704,69 +728,58 @@ func main() {
 			}
 			applyFilter()
 		}
-
-		
-
+ 
 		backButton := flatButton(theme.NavigateBackIcon(), "", func() {
 			if len(tab.History) == 0 {
 				return
 			}
-
 			last := len(tab.History) - 1
-			previousPath := tab.History[last]
+			previous := tab.History[last]
 			tab.History = tab.History[:last]
-			tab.LoadDir(previousPath)
+			tab.LoadDir(previous)
 		})
-
-		rootButton := flatButton(theme.MoveUpIcon(), "", func() {
+ 
+		upButton := flatButton(theme.MoveUpIcon(), "", func() {
 			parent := filepath.Dir(tab.Path)
 			if parent != tab.Path {
 				tab.History = append(tab.History, tab.Path)
 				tab.LoadDir(parent)
 			}
-
 		})
-
+ 
 		refreshButton := flatButton(theme.ViewRefreshIcon(), "", func() {
 			tab.LoadDir(tab.Path)
 		})
-
+ 
 		newFolderBtn := flatButton(theme.FolderNewIcon(), "", newFolder)
 		pasteBtn := flatButton(theme.ContentPasteIcon(), "", pasteHere)
 		viewBtn := flatButton(theme.GridIcon(), "", nil)
-
-		toolbar := container.NewBorder(
-			nil, nil,
-			container.NewHBox(backButton, rootButton, refreshButton),
-			container.NewHBox(newFolderBtn, pasteBtn, viewBtn, container.NewStack(spacer(220, 0), searchEntry)),
-			pathEntry,
-		)
-
-		dim := func(text string, align fyne.TextAlign) *widget.Label {
-			l := widget.NewLabel(text)
-			l.Importance = widget.LowImportance
-			l.Alignment = align
-			return l
-		}
+ 
+		leftButtons := container.NewHBox(backButton, upButton, refreshButton)
+		rightButtons := container.NewHBox(newFolderBtn, pasteBtn, viewBtn, container.NewStack(spacer(220, 0), searchEntry))
+		toolbar := container.NewBorder(nil, nil, leftButtons, rightButtons, pathEntry)
+ 
+		sizeHeader := widget.NewLabel("Size")
+		sizeHeader.Importance = widget.LowImportance
+		sizeHeader.Alignment = fyne.TextAlignTrailing
+ 
 		headerRow := container.NewBorder(nil, nil,
 			spacer(theme.IconInlineSize()+theme.Padding(), 0),
-			dim("Size", fyne.TextAlignTrailing),
+			sizeHeader,
 			nameHeader,
 		)
-
-		tab.Page = container.NewBorder(
-			container.NewVBox(toolbar, headerRow, widget.NewSeparator()),
-			nil, nil, nil,
-			container.NewStack(tab.List, tab.Grid, container.NewCenter(emptyLabel)),
-		)
-
+ 
+		top := container.NewVBox(toolbar, headerRow, widget.NewSeparator())
+		middle := container.NewStack(tab.List, tab.Grid, container.NewCenter(emptyLabel))
+		tab.Page = container.NewBorder(top, nil, nil, nil, middle)
+ 
 		viewBtn.OnTapped = func() {
 			tab.GridMode = !tab.GridMode
 			if tab.GridMode {
 				tab.List.Hide()
 				tab.Grid.Show()
-				headerRow.Hide()                 
-				viewBtn.SetIcon(theme.ListIcon()) 
+				headerRow.Hide()
+				viewBtn.SetIcon(theme.ListIcon())
 			} else {
 				tab.Grid.Hide()
 				tab.List.Show()
@@ -776,9 +789,9 @@ func main() {
 			tab.ClearSelection()
 			tab.Refresh()
 		}
-
+ 
 		tabs = append(tabs, tab)
-
+ 
 		tab.TabButton = NewTabChip(tabTitle(path),
 			func() { switchTab(indexOf(tab)) },
 			func() { closeTab(tab) },
@@ -787,61 +800,60 @@ func main() {
 		tab.LoadDir(path)
 		switchTab(len(tabs) - 1)
 	}
-
+ 
 	closeTab = func(tab *FileTab) {
 		if len(tabs) <= 1 {
 			return
 		}
 		i := indexOf(tab)
 		if i < 0 {
-
 			return
 		}
 		if tab.StopSearch != nil {
 			tab.StopSearch()
 		}
-
-		tabs = slices.Delete(tabs, i, i+1)
+ 
+		tabs = append(tabs[:i], tabs[i+1:]...)
 		tabBar.Remove(tab.TabButton)
-
-		switch {
-		case i < activeTab:
+ 
+		if i < activeTab {
 			activeTab--
-		case i == activeTab:
-			activeTab = min(i, len(tabs)-1)
-
+		} else if i == activeTab {
+			if i > len(tabs)-1 {
+				activeTab = len(tabs) - 1
+			} else {
+				activeTab = i
+			}
 		}
 		switchTab(activeTab)
-
 	}
-
+ 
 	switchTab = func(index int) {
 		if index < 0 || index >= len(tabs) {
 			return
 		}
-
+ 
 		activeTab = index
-
+ 
 		for i, t := range tabs {
 			t.TabButton.SetActive(i == activeTab)
 			t.TabButton.SetClosable(len(tabs) > 1)
 		}
-
+ 
 		content.Objects = []fyne.CanvasObject{tabs[activeTab].Page}
 		content.Refresh()
 	}
-
+ 
 	addButton := flatButton(theme.ContentAddIcon(), "", func() { addTab(home) })
-
-	tabHeader := container.NewBorder(
-		nil, nil, nil, addButton, tabBar,
-	)
+ 
+	tabHeader := container.NewBorder(nil, nil, nil, addButton, tabBar)
+ 
 	goTo := func(path string) {
 		tab := tabs[activeTab]
 		tab.History = append(tab.History, tab.Path)
 		tab.LoadDir(path)
 	}
-
+ 
 	sidebar := container.NewVBox(
 		sectionLabel("Places"),
 		flatButton(theme.HomeIcon(), "Home", func() { goTo(home) }),
@@ -850,14 +862,13 @@ func main() {
 		flatButton(theme.DocumentIcon(), "Documents", func() { goTo(filepath.Join(home, "Documents")) }),
 	)
 	sidebarPane := container.NewStack(spacer(120, 0), container.NewPadded(sidebar))
-
+ 
 	card := panel(content, theme.Color(theme.ColorNameMenuBackground), 12)
-	main := container.NewBorder(tabHeader, nil, nil, nil, card)
-
-	root := container.NewBorder(nil, nil, sidebarPane, nil, main)
-	window.SetContent(container.NewPadded(root)) 
-
+	mainArea := container.NewBorder(tabHeader, nil, nil, nil, card)
+ 
+	root := container.NewBorder(nil, nil, sidebarPane, nil, mainArea)
+	window.SetContent(container.NewPadded(root))
+ 
 	addTab(home)
 	window.ShowAndRun()
-
 }
